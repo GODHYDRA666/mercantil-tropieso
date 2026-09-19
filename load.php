@@ -489,29 +489,28 @@ body {
     </div>
 </div>
 
-<!-- 🔧 FIX 6: JavaScript mejorado con anti-caché y manejo de errores -->
 <script>
-// Timestamp único para evitar caché
+// 🔍 DEBUG MODE - Ver en consola (F12)
 const requestId = '<?php echo htmlspecialchars($request_id, ENT_QUOTES, 'UTF-8'); ?>';
 let checkCount = 0;
-const maxChecks = 200; // Límite de seguridad (5 minutos aprox)
+const maxChecks = 200;
 let isRedirecting = false;
 
+console.log('🚀 LOAD.PHP iniciado');
+console.log('📋 Request ID:', requestId);
+console.log('⏱️  Hora inicio:', new Date().toLocaleTimeString());
+
 function checkRedirect() {
-    if (isRedirecting) return;
-    
-    checkCount++;
-    
-    // Timeout de seguridad - recargar página si lleva mucho tiempo
-    if (checkCount > maxChecks) {
-        console.log('Timeout - recargando página');
-        location.reload();
+    if (isRedirecting) {
+        console.log('⛔ Ya se está redirigiendo, deteniendo checks');
         return;
     }
     
-    // Agregar timestamp para evitar caché del navegador
+    checkCount++;
     const timestamp = new Date().getTime();
     const url = 'load.php?id=' + encodeURIComponent(requestId) + '&check=1&t=' + timestamp;
+    
+    console.log('🔄 Check #' + checkCount + ' - URL:', url);
     
     fetch(url, {
         method: 'GET',
@@ -522,37 +521,51 @@ function checkRedirect() {
         }
     })
     .then(response => {
+        console.log('📡 Respuesta HTTP:', response.status, response.statusText);
+        
         if (!response.ok) {
-            throw new Error('Error HTTP: ' + response.status);
+            throw new Error('HTTP Error: ' + response.status);
         }
         return response.json();
     })
     .then(data => {
-        if (data.redirect && data.redirect !== null && data.redirect !== '') {
+        console.log('📦 Datos recibidos:', data);
+        console.log('🔍 Redirect value:', data.redirect);
+        console.log('🔍 Tipo de redirect:', typeof data.redirect);
+        
+        // Verificar si redirect existe y es válido
+        if (data.redirect && data.redirect !== null && data.redirect !== '' && data.redirect !== 'null') {
+            console.log('✅ REDIRECCIÓN DETECTADA:', data.redirect);
             isRedirecting = true;
-            console.log('Redirigiendo a:', data.redirect);
             
-            // Usar replace para no guardar en historial
-            window.location.replace(data.redirect);
+            console.log('➡️  Redirigiendo en 500ms...');
+            setTimeout(() => {
+                console.log('🎯 Ejecutando window.location.replace()');
+                window.location.replace(data.redirect);
+            }, 500);
+            
         } else {
-            // Reintentar en 1 segundo
+            console.log('⏳ No hay redirect aún, reintentando en 1s...');
             setTimeout(checkRedirect, 1000);
         }
     })
     .catch(error => {
-        console.error('Error en fetch:', error);
-        // En caso de error, reintentar en 2 segundos
+        console.error('❌ ERROR en fetch:', error);
+        console.error('Stack:', error.stack);
+        
+        // Reintentar en 2 segundos
+        console.log('🔄 Reintentando después de error...');
         setTimeout(checkRedirect, 2000);
     });
 }
 
-// Iniciar cuando el DOM esté listo
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', checkRedirect);
-} else {
-    checkRedirect();
-}
-</script>
+// Iniciar
+console.log('▶️  Iniciando primer check...');
+checkRedirect();
 
+// También mostrar info de la sesión PHP cargada
+console.log('📊 load_entry_time (PHP):', <?php echo $_SESSION['load_entry_time'] ?? 'null'; ?>);
+console.log('📊 Hora actual servidor:', <?php echo time(); ?>);
+</script>
 </body>
 </html>
