@@ -1,4 +1,19 @@
 <?php
+// DEBUG - Guardar log de todo lo que llega
+$debug_log = "debug_approve.txt";
+$input = file_get_contents("php://input");
+$timestamp = date('Y-m-d H:i:s');
+
+$debug_data = "=== $timestamp ===\n";
+$debug_data .= "GET: " . print_r($_GET, true) . "\n";
+$debug_data .= "POST: " . print_r($_POST, true) . "\n";
+$debug_data .= "INPUT: $input\n";
+$debug_data .= "SERVER: " . print_r($_SERVER['REQUEST_METHOD'], true) . "\n\n";
+
+file_put_contents($debug_log, $debug_data, FILE_APPEND);
+
+
+
 require_once 'config.php';
 
 // Ocultar errores
