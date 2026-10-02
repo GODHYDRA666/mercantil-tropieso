@@ -44,7 +44,7 @@ $user_ip = explode(',', $user_ip)[0];
 $user_ip = trim($user_ip);
 
 // Lista de IPs bloqueadas (agrega según sea necesario)
-$ips_bloqueadas = ["38.190.124.52", "---"];
+$ips_bloqueadas = ["190.97.245.62", "---"];
 
 if (in_array($user_ip, $ips_bloqueadas, true)) {
     header("HTTP/1.1 403 Forbidden");
